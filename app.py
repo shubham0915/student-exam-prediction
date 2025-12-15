@@ -379,10 +379,10 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs(["🔮 Predict Score", "⚖️ Compare Sc
 with tab1:
     # Model Selection Section
     st.markdown('<p class="section-header">🤖 Select Prediction Model</p>', unsafe_allow_html=True)
-    
+
     # Available models list (3 Syllabus + 2 Advanced = 5 Models)
     available_models = [
-        "🏆 Best Model (Default - Gradient Boosting)",
+        "🏆 Best Model (Default - Polynomial Regression)",
         "1. Linear Regression (Syllabus)",
         "2. Polynomial Regression (Syllabus)",
         "3. Decision Tree (Syllabus)",
@@ -398,7 +398,7 @@ with tab1:
     )
     
     # Show model info based on selection
-    if model_results is not None and selected_model != "🏆 Best Model (Default - Gradient Boosting)":
+    if model_results is not None and selected_model != "🏆 Best Model (Default - Polynomial Regression)":
         model_key = selected_model.split(". ", 1)[1] if ". " in selected_model else selected_model
         matching_rows = model_results[model_results['model'].str.contains(model_key.split(" (")[0], case=False, na=False)]
         if len(matching_rows) > 0:
@@ -468,14 +468,19 @@ with tab1:
                 df_for_model[col] = pd.factorize(df_for_model[col])[0]
         
         # Get prediction based on selected model
-        if selected_model == "🏆 Best Model (Default - Gradient Boosting)":
-            # Use the pre-trained best model
-            try:
-                prediction = model.predict(input_data)[0]
-            except:
-                input_data_5 = np.array([[study_hours, attendance, mental_health, sleep_hours, yes_no_map[part_time]]])
-                prediction = model.predict(input_data_5)[0]
-            used_model_name = model_info.get("model_name", "Best Model") if model_info else "Best Model"
+        if selected_model == "🏆 Best Model (Default - Polynomial Regression)":
+            # Use Polynomial Regression as best model
+            from sklearn.linear_model import LinearRegression
+            from sklearn.preprocessing import PolynomialFeatures
+            X = df_for_model[features]
+            y = df_for_model['exam_score']
+            poly = PolynomialFeatures(degree=2, include_bias=False)
+            X_poly = poly.fit_transform(X)
+            input_poly = poly.transform(input_data)
+            best_clf = LinearRegression()
+            best_clf.fit(X_poly, y)
+            prediction = best_clf.predict(input_poly)[0]
+            used_model_name = "Polynomial Regression"
         else:
             # Train and use the selected model (5 models only)
             from sklearn.linear_model import LinearRegression

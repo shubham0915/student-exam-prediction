@@ -1,0 +1,12 @@
+feature,importance
+extracurricular_participation,0.002698865592396588
+part_time_job,0.002961261997205625
+internet_quality,0.0037313883068275616
+diet_quality,0.004959178278458342
+attendance_percentage,0.023463437055801444
+netflix_hours,0.03345931237676175
+exercise_frequency,0.034046514246710444
+sleep_hours,0.037451064500233354
+social_media_hours,0.041187985436810313
+mental_health_rating,0.11134124859830725
+study_hours_per_day,0.7046997436104874

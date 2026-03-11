@@ -3,8 +3,14 @@ import numpy as np
 import pandas as pd
 import joblib
 import warnings
-import os
+from pathlib import Path
 warnings.filterwarnings("ignore")
+
+BASE_DIR = Path(__file__).resolve().parent
+
+
+def project_file(filename):
+    return BASE_DIR / filename
 
 # Page configuration
 st.set_page_config(
@@ -290,27 +296,27 @@ st.markdown("""
 # Load model and related files
 @st.cache_resource
 def load_model_and_data():
-    model = joblib.load("best_model.pkl")
+    model = joblib.load(project_file("best_model.pkl"))
     
     # Try to load additional files if they exist
     model_info = None
     feature_importance = None
     le_dict = None
     
-    if os.path.exists("model_info.pkl"):
-        model_info = joblib.load("model_info.pkl")
-    if os.path.exists("feature_importance.csv"):
-        feature_importance = pd.read_csv("feature_importance.csv")
-    if os.path.exists("label_encoders.pkl"):
-        le_dict = joblib.load("label_encoders.pkl")
+    if project_file("model_info.pkl").exists():
+        model_info = joblib.load(project_file("model_info.pkl"))
+    if project_file("feature_importance.csv").exists():
+        feature_importance = pd.read_csv(project_file("feature_importance.csv"))
+    if project_file("label_encoders.pkl").exists():
+        le_dict = joblib.load(project_file("label_encoders.pkl"))
     
     # Load original data for insights
-    df = pd.read_csv("student_habits_performance.csv")
+    df = pd.read_csv(project_file("student_habits_performance.csv"))
     
     # Load model results for model selection
     model_results = None
-    if os.path.exists("model_results.csv"):
-        model_results = pd.read_csv("model_results.csv")
+    if project_file("model_results.csv").exists():
+        model_results = pd.read_csv(project_file("model_results.csv"))
     
     return model, model_info, feature_importance, le_dict, df, model_results
 
@@ -346,7 +352,7 @@ def get_trained_model(model_name, _df_model, _features):
         trained_model.fit(X, y)
     else:
         # Default to best model
-        trained_model = joblib.load("best_model.pkl")
+        trained_model = joblib.load(project_file("best_model.pkl"))
     
     return trained_model, None, poly
 
@@ -631,20 +637,95 @@ with tab2:
         ptj_b = st.selectbox("Part-Time Job", ["No", "Yes"], index=0, key="pb")
     
     if st.button("⚖️ Compare Scenarios", key="compare"):
-        ptj_map = {"No": 0, "Yes": 1}
-        
-        try:
-            # Try expanded features
-            input_a = np.array([[study_a, attendance_a, mental_a, sleep_a, ptj_map[ptj_a], 2.0, 1.5, 3, 0, 0, 0]])
-            input_b = np.array([[study_b, attendance_b, mental_b, sleep_b, ptj_map[ptj_b], 2.0, 1.5, 3, 0, 0, 0]])
-            pred_a = model.predict(input_a)[0]
-            pred_b = model.predict(input_b)[0]
-        except:
-            input_a = np.array([[study_a, attendance_a, mental_a, sleep_a, ptj_map[ptj_a]]])
-            input_b = np.array([[study_b, attendance_b, mental_b, sleep_b, ptj_map[ptj_b]]])
-            pred_a = model.predict(input_a)[0]
-            pred_b = model.predict(input_b)[0]
-        
+        # Use the same preprocessing + model selection logic as the main predictor
+        diet_map = {"Poor": 2, "Fair": 0, "Good": 1}
+        internet_map = {"Poor": 2, "Average": 0, "Good": 1}
+        yes_no_map = {"No": 0, "Yes": 1}
+
+        # Default values for fields not in the compare UI
+        social_media_default = 2.0
+        netflix_default = 1.5
+        exercise_default = 3
+        diet_default = "Good"
+        internet_default = "Good"
+        extracurricular_default = "No"
+
+        features = [
+            "study_hours_per_day", "attendance_percentage", "mental_health_rating",
+            "sleep_hours", "part_time_job", "social_media_hours", "netflix_hours",
+            "exercise_frequency", "diet_quality", "internet_quality", "extracurricular_participation"
+        ]
+
+        input_a = np.array([[
+            study_a, attendance_a, mental_a, sleep_a, yes_no_map[ptj_a],
+            social_media_default, netflix_default, exercise_default,
+            diet_map[diet_default], internet_map[internet_default], yes_no_map[extracurricular_default]
+        ]])
+
+        input_b = np.array([[
+            study_b, attendance_b, mental_b, sleep_b, yes_no_map[ptj_b],
+            social_media_default, netflix_default, exercise_default,
+            diet_map[diet_default], internet_map[internet_default], yes_no_map[extracurricular_default]
+        ]])
+
+        # Factorize categorical columns for training
+        df_for_model = df.copy()
+        categorical_features = ["part_time_job", "diet_quality", "internet_quality", "extracurricular_participation"]
+        for col in categorical_features:
+            if col in df_for_model.columns:
+                df_for_model[col] = pd.factorize(df_for_model[col])[0]
+
+        from sklearn.linear_model import LinearRegression
+        from sklearn.tree import DecisionTreeRegressor
+        from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+        from sklearn.preprocessing import PolynomialFeatures
+
+        X = df_for_model[features]
+        y = df_for_model['exam_score']
+
+        if selected_model == "🏆 Best Model (Default - Polynomial Regression)":
+            poly = PolynomialFeatures(degree=2, include_bias=False)
+            X_poly = poly.fit_transform(X)
+            input_a_poly = poly.transform(input_a)
+            input_b_poly = poly.transform(input_b)
+            clf = LinearRegression()
+            clf.fit(X_poly, y)
+            pred_a = clf.predict(input_a_poly)[0]
+            pred_b = clf.predict(input_b_poly)[0]
+        elif "Linear Regression" in selected_model:
+            clf = LinearRegression().fit(X, y)
+            pred_a = clf.predict(input_a)[0]
+            pred_b = clf.predict(input_b)[0]
+        elif "Polynomial" in selected_model:
+            poly = PolynomialFeatures(degree=2, include_bias=False)
+            X_poly = poly.fit_transform(X)
+            input_a_poly = poly.transform(input_a)
+            input_b_poly = poly.transform(input_b)
+            clf = LinearRegression().fit(X_poly, y)
+            pred_a = clf.predict(input_a_poly)[0]
+            pred_b = clf.predict(input_b_poly)[0]
+        elif "Decision Tree" in selected_model:
+            clf = DecisionTreeRegressor(max_depth=5, min_samples_split=2, random_state=42).fit(X, y)
+            pred_a = clf.predict(input_a)[0]
+            pred_b = clf.predict(input_b)[0]
+        elif "Random Forest" in selected_model:
+            clf = RandomForestRegressor(n_estimators=100, max_depth=15, random_state=42).fit(X, y)
+            pred_a = clf.predict(input_a)[0]
+            pred_b = clf.predict(input_b)[0]
+        elif "Gradient Boosting" in selected_model:
+            clf = GradientBoostingRegressor(n_estimators=100, max_depth=3, learning_rate=0.1, random_state=42).fit(X, y)
+            pred_a = clf.predict(input_a)[0]
+            pred_b = clf.predict(input_b)[0]
+        else:
+            # Fallback to polynomial best
+            poly = PolynomialFeatures(degree=2, include_bias=False)
+            X_poly = poly.fit_transform(X)
+            input_a_poly = poly.transform(input_a)
+            input_b_poly = poly.transform(input_b)
+            clf = LinearRegression().fit(X_poly, y)
+            pred_a = clf.predict(input_a_poly)[0]
+            pred_b = clf.predict(input_b_poly)[0]
+
         pred_a = max(0, min(100, pred_a))
         pred_b = max(0, min(100, pred_b))
         diff = pred_b - pred_a
@@ -715,7 +796,7 @@ with tab3:
             xaxis=dict(tickfont=dict(color='#ffffff'), title_font=dict(color='#ffffff')),
             yaxis=dict(tickfont=dict(color='#ffffff'), title_font=dict(color='#ffffff'))
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     
     with col2:
         st.markdown("#### 📈 Study Hours vs Score")
@@ -730,7 +811,7 @@ with tab3:
             yaxis=dict(tickfont=dict(color='#ffffff'), title_font=dict(color='#ffffff')),
             coloraxis_colorbar=dict(tickfont=dict(color='#ffffff'), title_font=dict(color='#ffffff'))
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     
     st.markdown("---")
     
@@ -770,7 +851,7 @@ with tab4:
             yaxis=dict(tickfont=dict(color='#ffffff'), title_font=dict(color='#ffffff')),
             coloraxis_colorbar=dict(tickfont=dict(color='#ffffff'), title_font=dict(color='#ffffff'))
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
         
         # Top insights
         top_features = feature_importance.nlargest(3, 'importance')
@@ -807,7 +888,7 @@ with tab4:
             yaxis=dict(tickfont=dict(color='#ffffff'), title_font=dict(color='#ffffff')),
             coloraxis_colorbar=dict(tickfont=dict(color='#ffffff'), title_font=dict(color='#ffffff'))
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
 # ============== TAB 5: MODEL COMPARISON ==============
 with tab5:
@@ -843,9 +924,9 @@ with tab5:
             st.dataframe(styled_results.style.highlight_max(subset=['R² Score'], color='#00d4ff30')
                         .highlight_min(subset=['MAE', 'MSE', 'RMSE'], color='#00d4ff30')
                         .format({'MAE': '{:.4f}', 'MSE': '{:.4f}', 'RMSE': '{:.4f}', 'R² Score': '{:.4f}'}),
-                        use_container_width=True)
+                        width="stretch")
         else:
-            st.dataframe(model_results_clean, use_container_width=True)
+            st.dataframe(model_results_clean, width="stretch")
         
         st.markdown("---")
         
@@ -868,7 +949,7 @@ with tab5:
         )
         fig_r2.add_vline(x=0.9, line_dash="dash", line_color="#ff00ff", 
                         annotation_text="90% Threshold", annotation_position="top")
-        st.plotly_chart(fig_r2, use_container_width=True)
+        st.plotly_chart(fig_r2, width="stretch")
         
         st.markdown("---")
         
@@ -889,7 +970,7 @@ with tab5:
             yaxis=dict(tickfont=dict(color='#ffffff'), title_font=dict(color='#ffffff')),
             coloraxis_colorbar=dict(tickfont=dict(color='#ffffff'), title_font=dict(color='#ffffff'))
         )
-        st.plotly_chart(fig_rmse, use_container_width=True)
+        st.plotly_chart(fig_rmse, width="stretch")
         
         st.markdown("---")
         
@@ -921,7 +1002,7 @@ with tab5:
                 yaxis=dict(tickfont=dict(color='#ffffff'), title_font=dict(color='#ffffff')),
                 coloraxis_colorbar=dict(tickfont=dict(color='#ffffff'), title_font=dict(color='#ffffff'))
             )
-            st.plotly_chart(fig_mae, use_container_width=True)
+            st.plotly_chart(fig_mae, width="stretch")
         
         with col2:
             st.markdown("**MSE Comparison (Lower is Better)**")
@@ -939,7 +1020,7 @@ with tab5:
                 yaxis=dict(tickfont=dict(color='#ffffff'), title_font=dict(color='#ffffff')),
                 coloraxis_colorbar=dict(tickfont=dict(color='#ffffff'), title_font=dict(color='#ffffff'))
             )
-            st.plotly_chart(fig_mse, use_container_width=True)
+            st.plotly_chart(fig_mse, width="stretch")
         
         st.markdown("---")
         
